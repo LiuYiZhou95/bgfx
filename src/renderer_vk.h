@@ -1,5 +1,5 @@
 /*
- * Copyright 2011-2020 Branimir Karadzic. All rights reserved.
+ * Copyright 2011-2021 Branimir Karadzic. All rights reserved.
  * License: https://github.com/bkaradzic/bgfx#license-bsd-2-clause
  */
 
@@ -42,6 +42,7 @@
 			VK_IMPORT_FUNC(false, vkGetDeviceProcAddr);                    \
 			VK_IMPORT_FUNC(false, vkEnumerateInstanceExtensionProperties); \
 			VK_IMPORT_FUNC(false, vkEnumerateInstanceLayerProperties);     \
+			VK_IMPORT_FUNC(false, vkEnumerateInstanceVersion);             \
 
 #define VK_IMPORT_INSTANCE_ANDROID \
 			VK_IMPORT_INSTANCE_FUNC(true,  vkCreateAndroidSurfaceKHR);
@@ -72,6 +73,7 @@
 			VK_IMPORT_INSTANCE_FUNC(false, vkGetPhysicalDeviceProperties);             \
 			VK_IMPORT_INSTANCE_FUNC(false, vkGetPhysicalDeviceFormatProperties);       \
 			VK_IMPORT_INSTANCE_FUNC(false, vkGetPhysicalDeviceFeatures);               \
+			VK_IMPORT_INSTANCE_FUNC(false, vkGetPhysicalDeviceFeatures2KHR);           \
 			VK_IMPORT_INSTANCE_FUNC(false, vkGetPhysicalDeviceImageFormatProperties);  \
 			VK_IMPORT_INSTANCE_FUNC(false, vkGetPhysicalDeviceMemoryProperties);       \
 			VK_IMPORT_INSTANCE_FUNC(true,  vkGetPhysicalDeviceMemoryProperties2KHR);   \
@@ -108,6 +110,7 @@
 			VK_IMPORT_DEVICE_FUNC(false, vkFreeCommandBuffers);            \
 			VK_IMPORT_DEVICE_FUNC(false, vkGetBufferMemoryRequirements);   \
 			VK_IMPORT_DEVICE_FUNC(false, vkGetImageMemoryRequirements);    \
+			VK_IMPORT_DEVICE_FUNC(false, vkGetImageSubresourceLayout);     \
 			VK_IMPORT_DEVICE_FUNC(false, vkAllocateMemory);                \
 			VK_IMPORT_DEVICE_FUNC(false, vkFreeMemory);                    \
 			VK_IMPORT_DEVICE_FUNC(false, vkCreateImage);                   \
@@ -171,6 +174,8 @@
 			VK_IMPORT_DEVICE_FUNC(false, vkCmdResolveImage);               \
 			VK_IMPORT_DEVICE_FUNC(false, vkCmdCopyBuffer);                 \
 			VK_IMPORT_DEVICE_FUNC(false, vkCmdCopyBufferToImage);          \
+			VK_IMPORT_DEVICE_FUNC(false, vkCmdCopyImage);                  \
+			VK_IMPORT_DEVICE_FUNC(false, vkCmdCopyImageToBuffer);          \
 			VK_IMPORT_DEVICE_FUNC(false, vkCmdBlitImage);                  \
 			VK_IMPORT_DEVICE_FUNC(false, vkMapMemory);                     \
 			VK_IMPORT_DEVICE_FUNC(false, vkUnmapMemory);                   \
@@ -272,19 +277,19 @@
 namespace bgfx { namespace vk
 {
 
-#define VK_DESTROY_FUNC(_name)                                           \
-			struct Vk##_name                                             \
-			{                                                            \
-				::Vk##_name vk;                                          \
-				Vk##_name() {}                                           \
-				Vk##_name(::Vk##_name _vk) : vk(_vk) {}                  \
-				operator ::Vk##_name() { return vk; }                    \
-				operator ::Vk##_name() const { return vk; }              \
-				::Vk##_name* operator &() { return &vk; }                \
-				const ::Vk##_name* operator &() const { return &vk; }    \
-			};                                                           \
-			BX_STATIC_ASSERT(sizeof(::Vk##_name) == sizeof(Vk##_name) ); \
-			void vkDestroy(Vk##_name&)
+#define VK_DESTROY_FUNC(_name)                                   \
+	struct Vk##_name                                             \
+	{                                                            \
+		::Vk##_name vk;                                          \
+		Vk##_name() {}                                           \
+		Vk##_name(::Vk##_name _vk) : vk(_vk) {}                  \
+		operator ::Vk##_name() { return vk; }                    \
+		operator ::Vk##_name() const { return vk; }              \
+		::Vk##_name* operator &() { return &vk; }                \
+		const ::Vk##_name* operator &() const { return &vk; }    \
+	};                                                           \
+	BX_STATIC_ASSERT(sizeof(::Vk##_name) == sizeof(Vk##_name) ); \
+	void vkDestroy(Vk##_name&)
 VK_DESTROY
 #undef VK_DESTROY_FUNC
 
@@ -327,7 +332,7 @@ VK_DESTROY
 			typename HashMap::iterator it = m_hashMap.find(_key);
 			if (it != m_hashMap.end() )
 			{
-				vkDestroy(it->second);
+				destroy(it->second);
 				m_hashMap.erase(it);
 			}
 		}
@@ -336,7 +341,7 @@ VK_DESTROY
 		{
 			for (typename HashMap::iterator it = m_hashMap.begin(), itEnd = m_hashMap.end(); it != itEnd; ++it)
 			{
-				vkDestroy(it->second);
+				destroy(it->second);
 			}
 
 			m_hashMap.clear();
@@ -348,6 +353,8 @@ VK_DESTROY
 		}
 
 	private:
+		void destroy(Ty handle);
+
 		typedef stl::unordered_map<uint64_t, Ty> HashMap;
 		HashMap m_hashMap;
 	};
@@ -363,9 +370,11 @@ VK_DESTROY
 		{
 		}
 
-		void create(uint32_t _size, uint32_t _maxDescriptors);
+		void create(uint32_t _size, uint32_t _count, uint32_t _maxDescriptors);
 		void destroy();
 		void reset();
+		uint32_t write(const void* _data, uint32_t _size);
+		void flush();
 
 		VkDescriptorSet& getCurrentDS()
 		{
@@ -382,23 +391,6 @@ VK_DESTROY
 		uint32_t m_maxDescriptors;
 	};
 
-	struct ImageVK
-	{
-		ImageVK()
-			: m_memory(VK_NULL_HANDLE)
-			, m_image(VK_NULL_HANDLE)
-			, m_imageView(VK_NULL_HANDLE)
-		{
-		}
-
-		VkResult create(VkFormat _format, const VkExtent3D& _extent);
-		void destroy();
-
-		VkDeviceMemory m_memory;
-		VkImage        m_image;
-		VkImageView    m_imageView;
-	};
-
 	struct BufferVK
 	{
 		BufferVK()
@@ -410,7 +402,7 @@ VK_DESTROY
 		{
 		}
 
-		void create(uint32_t _size, void* _data, uint16_t _flags, bool _vertex, uint32_t _stride = 0);
+		void create(VkCommandBuffer _commandBuffer, uint32_t _size, void* _data, uint16_t _flags, bool _vertex, uint32_t _stride = 0);
 		void update(VkCommandBuffer _commandBuffer, uint32_t _offset, uint32_t _size, void* _data, bool _discard = false);
 		void destroy();
 
@@ -423,9 +415,15 @@ VK_DESTROY
 
 	typedef BufferVK IndexBufferVK;
 
+	struct MsaaSamplerVK
+	{
+		uint16_t Count;
+		VkSampleCountFlagBits Sample;
+	};
+
 	struct VertexBufferVK : public BufferVK
 	{
-		void create(uint32_t _size, void* _data, VertexLayoutHandle _layoutHandle, uint16_t _flags);
+		void create(VkCommandBuffer _commandBuffer, uint32_t _size, void* _data, VertexLayoutHandle _layoutHandle, uint16_t _flags);
 
 		VertexLayoutHandle m_layoutHandle;
 	};
@@ -512,26 +510,108 @@ VK_DESTROY
 		VkPipelineLayout m_pipelineLayout;
 	};
 
+	struct TimerQueryVK
+	{
+		TimerQueryVK()
+			: m_control(BX_COUNTOF(m_query) )
+		{
+		}
+
+		VkResult init()
+		{
+			return VK_SUCCESS;
+		}
+
+		void shutdown()
+		{
+		}
+
+		uint32_t begin(uint32_t _resultIdx)
+		{
+			BX_UNUSED(_resultIdx);
+			return 0;
+		}
+
+		void end(uint32_t _idx)
+		{
+			BX_UNUSED(_idx);
+		}
+
+		bool update()
+		{
+			return false;
+		}
+
+		struct Result
+		{
+			void reset()
+			{
+				m_begin   = 0;
+				m_end     = 0;
+				m_pending = 0;
+			}
+
+			uint64_t m_begin;
+			uint64_t m_end;
+			uint32_t m_pending;
+		};
+
+		struct Query
+		{
+			uint32_t m_begin;
+			uint32_t m_end;
+			uint32_t m_resultIdx;
+			bool     m_ready;
+		};
+
+		uint64_t m_frequency;
+
+		Result m_result[BGFX_CONFIG_MAX_VIEWS+1];
+
+		Query m_query[BGFX_CONFIG_MAX_VIEWS*4];
+		bx::RingBufferControl m_control;
+	};
+
+	struct ReadbackVK
+	{
+		void create(VkImage _image, uint32_t _width, uint32_t _height, bimg::TextureFormat::Enum _format);
+		void destroy();
+		uint32_t pitch(uint8_t _mip = 0) const;
+		void copyImageToBuffer(VkCommandBuffer _commandBuffer, VkBuffer _buffer, VkImageLayout _layout, VkImageAspectFlags _aspect, uint8_t _mip = 0) const;
+		void readback(VkDeviceMemory _memory, VkDeviceSize _offset, void* _data, uint8_t _mip = 0) const;
+
+		VkImage m_image;
+		uint32_t m_width;
+		uint32_t m_height;
+		bimg::TextureFormat::Enum m_format;
+	};
+
 	struct TextureVK
 	{
 		TextureVK()
 			: m_directAccessPtr(NULL)
+			, m_sampler({ 1, VK_SAMPLE_COUNT_1_BIT })
 			, m_format(VK_FORMAT_UNDEFINED)
 			, m_textureImage(VK_NULL_HANDLE)
 			, m_textureDeviceMem(VK_NULL_HANDLE)
 			, m_textureImageView(VK_NULL_HANDLE)
 			, m_textureImageDepthView(VK_NULL_HANDLE)
-			, m_textureImageStorageView(VK_NULL_HANDLE)
 			, m_currentImageLayout(VK_IMAGE_LAYOUT_UNDEFINED)
+			, m_singleMsaaImage(VK_NULL_HANDLE)
+			, m_singleMsaaDeviceMem(VK_NULL_HANDLE)
+			, m_singleMsaaImageView(VK_NULL_HANDLE)
 		{
 		}
 
-		void* create(const Memory* _mem, uint64_t _flags, uint8_t _skip);
+		void* create(VkCommandBuffer _commandBuffer, const Memory* _mem, uint64_t _flags, uint8_t _skip);
 		void destroy();
-		void update(VkCommandPool commandPool, uint8_t _side, uint8_t _mip, const Rect& _rect, uint16_t _z, uint16_t _depth, uint16_t _pitch, const Memory* _mem);
+		void update(VkCommandBuffer _commandBuffer, uint8_t _side, uint8_t _mip, const Rect& _rect, uint16_t _z, uint16_t _depth, uint16_t _pitch, const Memory* _mem);
+		void resolve(VkCommandBuffer _commandBuffer, uint8_t _resolve);
 
-		void copyBufferToTexture(VkBuffer stagingBuffer, uint32_t bufferImageCopyCount, VkBufferImageCopy* bufferImageCopy);
-		void setImageMemoryBarrier(VkCommandBuffer commandBuffer, VkImageLayout newImageLayout);
+		void copyBufferToTexture(VkCommandBuffer _commandBuffer, VkBuffer _stagingBuffer, uint32_t _bufferImageCopyCount, VkBufferImageCopy* _bufferImageCopy);
+		void setImageMemoryBarrier(VkCommandBuffer _commandBuffer, VkImageLayout _newImageLayout);
+
+		VkImageView createView(uint32_t _layer, uint32_t _numLayers, uint32_t _mip, uint32_t _numMips) const;
 
 		void*    m_directAccessPtr;
 		uint64_t m_flags;
@@ -544,46 +624,101 @@ VK_DESTROY
 		uint8_t  m_textureFormat;
 		uint8_t  m_numMips;
 
-		VkImageViewType m_type;
-		VkFormat m_format;
+		MsaaSamplerVK m_sampler;
+
+		VkImageViewType    m_type;
+		VkFormat           m_format;
 		VkComponentMapping m_components;
 		VkImageAspectFlags m_aspectMask;
 
-		VkImage m_textureImage;
+		VkImage        m_textureImage;
 		VkDeviceMemory m_textureDeviceMem;
-		VkImageView m_textureImageView;
-		VkImageView m_textureImageDepthView;
-		VkImageView m_textureImageStorageView;
-		VkImageLayout m_currentImageLayout;
+		VkImageView    m_textureImageView;
+		VkImageView    m_textureImageDepthView;
+		VkImageLayout  m_currentImageLayout;
+
+		VkImage        m_singleMsaaImage;
+		VkDeviceMemory m_singleMsaaDeviceMem;
+		VkImageView    m_singleMsaaImageView;
+
+		ReadbackVK m_readback;
 	};
 
 	struct FrameBufferVK
 	{
 		FrameBufferVK()
-			: m_depth{ kInvalidHandle }
+			: m_depth({ kInvalidHandle })
 			, m_width(0)
 			, m_height(0)
 			, m_denseIdx(kInvalidHandle)
 			, m_num(0)
 			, m_numTh(0)
+			, m_needRecreate(false)
 			, m_framebuffer(VK_NULL_HANDLE)
 		{
 		}
+
 		void create(uint8_t _num, const Attachment* _attachment);
+		void resolve();
 		void destroy();
 
 		TextureHandle m_texture[BGFX_CONFIG_MAX_FRAME_BUFFER_ATTACHMENTS];
 		TextureHandle m_depth;
-//		IDXGISwapChain* m_swapChain;
 		uint32_t m_width;
 		uint32_t m_height;
 		uint16_t m_denseIdx;
 		uint8_t m_num;
 		uint8_t m_numTh;
-		uint8_t m_numAttachment;
+		bool m_needRecreate;
 		Attachment m_attachment[BGFX_CONFIG_MAX_FRAME_BUFFER_ATTACHMENTS];
+
+		VkImageView m_textureImageViews[BGFX_CONFIG_MAX_FRAME_BUFFER_ATTACHMENTS];
 		VkFramebuffer m_framebuffer;
 		VkRenderPass m_renderPass;
+	};
+
+	struct CommandQueueVK
+	{
+		VkResult init(uint32_t _queueFamily, VkQueue _queue, uint32_t _numFramesInFlight);
+		VkResult reset();
+		void shutdown();
+		VkResult alloc(VkCommandBuffer* _commandBuffer);
+		void kick(VkSemaphore _waitSemaphore = VK_NULL_HANDLE, VkSemaphore _signalSemaphore = VK_NULL_HANDLE, bool _wait = false);
+		void finish(bool _finishAll = false);
+		void release(uint64_t _handle, VkObjectType _type);
+		void consume();
+
+		uint32_t m_queueFamily;
+		VkQueue m_queue;
+
+		uint32_t m_numFramesInFlight;
+
+		uint32_t m_currentFrameInFlight = 0;
+		uint32_t m_consumeIndex = 0;
+
+		VkCommandBuffer m_activeCommandBuffer;
+
+		VkSemaphore m_kickedSemaphore;
+		VkFence m_kickedFence;
+
+		struct CommandList
+		{
+			VkCommandPool m_commandPool = VK_NULL_HANDLE;
+			VkCommandBuffer m_commandBuffer = VK_NULL_HANDLE;
+			VkSemaphore m_semaphore = VK_NULL_HANDLE;
+			VkFence m_fence = VK_NULL_HANDLE;
+		};
+
+		CommandList m_commandList[BGFX_CONFIG_MAX_FRAME_LATENCY];
+
+		struct Resource
+		{
+			VkObjectType m_type;
+			uint64_t m_handle;
+		};
+
+		typedef stl::vector<Resource> ResourceArray;
+		ResourceArray m_release[BGFX_CONFIG_MAX_FRAME_LATENCY];
 	};
 
 } /* namespace bgfx */ } // namespace vk

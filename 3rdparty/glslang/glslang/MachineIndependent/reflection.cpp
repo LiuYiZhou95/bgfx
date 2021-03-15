@@ -33,7 +33,7 @@
 // POSSIBILITY OF SUCH DAMAGE.
 //
 
-#ifndef GLSLANG_WEB
+#if !defined(GLSLANG_WEB) && !defined(GLSLANG_ANGLE)
 
 #include "../Include/Common.h"
 #include "reflection.h"
@@ -658,14 +658,17 @@ public:
 
                 blocks.back().numMembers = countAggregateMembers(type);
 
-                EShLanguageMask& stages = blocks.back().stages;
-                stages = static_cast<EShLanguageMask>(stages | 1 << intermediate.getStage());
+                if (updateStageMasks) {
+                    EShLanguageMask& stages = blocks.back().stages;
+                    stages = static_cast<EShLanguageMask>(stages | 1 << intermediate.getStage());
+                }
             }
             else {
                 blockIndex = it->second;
-
-                EShLanguageMask& stages = blocks[blockIndex].stages;
-                stages = static_cast<EShLanguageMask>(stages | 1 << intermediate.getStage());
+                if (updateStageMasks) {
+                    EShLanguageMask& stages = blocks[blockIndex].stages;
+                    stages = static_cast<EShLanguageMask>(stages | 1 << intermediate.getStage());
+                }
             }
         }
 
@@ -1135,6 +1138,8 @@ void TReflection::buildCounterIndices(const TIntermediate& intermediate)
         if (index >= 0)
             indexToUniformBlock[i].counterIndex = index;
     }
+#else
+    (void)intermediate;
 #endif
 }
 
@@ -1266,4 +1271,4 @@ void TReflection::dump()
 
 } // end namespace glslang
 
-#endif // GLSLANG_WEB
+#endif // !GLSLANG_WEB && !GLSLANG_ANGLE

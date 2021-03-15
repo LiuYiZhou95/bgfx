@@ -167,7 +167,7 @@ typedef enum {
     EShTargetVulkan_1_1 = (1 << 22) | (1 << 12),      // Vulkan 1.1
     EShTargetVulkan_1_2 = (1 << 22) | (2 << 12),      // Vulkan 1.2
     EShTargetOpenGL_450 = 450,                        // OpenGL
-    LAST_ELEMENT_MARKER(EShTargetClientVersionCount),
+    LAST_ELEMENT_MARKER(EShTargetClientVersionCount = 4),
 } EShTargetClientVersion;
 
 typedef EShTargetClientVersion EshTargetClientVersion;
@@ -179,7 +179,7 @@ typedef enum {
     EShTargetSpv_1_3 = (1 << 16) | (3 << 8),          // SPIR-V 1.3
     EShTargetSpv_1_4 = (1 << 16) | (4 << 8),          // SPIR-V 1.4
     EShTargetSpv_1_5 = (1 << 16) | (5 << 8),          // SPIR-V 1.5
-    LAST_ELEMENT_MARKER(EShTargetLanguageVersionCount),
+    LAST_ELEMENT_MARKER(EShTargetLanguageVersionCount = 6),
 } EShTargetLanguageVersion;
 
 struct TInputLanguage {
@@ -458,6 +458,7 @@ public:
     GLSLANG_EXPORT void setEntryPoint(const char* entryPoint);
     GLSLANG_EXPORT void setSourceEntryPoint(const char* sourceEntryPointName);
     GLSLANG_EXPORT void addProcesses(const std::vector<std::string>&);
+    GLSLANG_EXPORT void setUniqueId(unsigned long long id);
 
     // IO resolver binding data: see comments in ShaderLang.cpp
     GLSLANG_EXPORT void setShiftBinding(TResourceType res, unsigned int base);
@@ -690,7 +691,7 @@ private:
     TShader& operator=(TShader&);
 };
 
-#ifndef GLSLANG_WEB
+#if !defined(GLSLANG_WEB) && !defined(GLSLANG_ANGLE)
 
 //
 // A reflection database and its interface, consistent with the OpenGL API reflection queries.
@@ -808,7 +809,7 @@ public:
     virtual void addStage(EShLanguage stage) = 0;
 };
 
-#endif // GLSLANG_WEB
+#endif // !GLSLANG_WEB && !GLSLANG_ANGLE
 
 // Make one TProgram per set of shaders that will get linked together.  Add all
 // the shaders that are to be linked together.  After calling shader.parse()
@@ -829,7 +830,7 @@ public:
 
     TIntermediate* getIntermediate(EShLanguage stage) const { return intermediate[stage]; }
 
-#ifndef GLSLANG_WEB
+#if !defined(GLSLANG_WEB) && !defined(GLSLANG_ANGLE)
 
     // Reflection Interface
 
@@ -923,7 +924,7 @@ public:
     // If resolver is not provided it uses the previous approach
     // and respects auto assignment and offsets.
     GLSLANG_EXPORT bool mapIO(TIoMapResolver* pResolver = nullptr, TIoMapper* pIoMapper = nullptr);
-#endif
+#endif // !GLSLANG_WEB && !GLSLANG_ANGLE
 
 protected:
     GLSLANG_EXPORT bool linkStage(EShLanguage, EShMessages);
@@ -933,7 +934,7 @@ protected:
     TIntermediate* intermediate[EShLangCount];
     bool newedIntermediate[EShLangCount];      // track which intermediate were "new" versus reusing a singleton unit in a stage
     TInfoSink* infoSink;
-#ifndef GLSLANG_WEB
+#if !defined(GLSLANG_WEB) && !defined(GLSLANG_ANGLE)
     TReflection* reflection;
 #endif
     bool linked;
